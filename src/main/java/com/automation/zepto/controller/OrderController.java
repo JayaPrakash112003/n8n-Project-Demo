@@ -17,13 +17,18 @@ public class OrderController {
     private ZeptoService zeptoService;
 
     @PostMapping
-    public ResponseEntity<String> placeOrder(@RequestBody OrderRequest request) {
+    public ResponseEntity<java.util.Map<String, Object>> placeOrder(@RequestBody OrderRequest request) {
+        java.util.Map<String, Object> response = new java.util.HashMap<>();
         try {
-            String status = zeptoService.executeOrder(request);
-            return ResponseEntity.ok(status);
+            String result = zeptoService.executeOrder(request);
+            response.put("status", "success");
+            response.put("message", result);
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.internalServerError().body("Order failed: " + e.getMessage());
+            response.put("status", "error");
+            response.put("message", "Order failed: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(response);
         }
     }
 }
