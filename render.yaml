@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: zepto-automation
+    env: docker
+    plan: free
+    region: singapore # or your preferred region
+    buildCommand: "./mvnw package -DskipTests" # If not using Docker, but we are using Docker so this is for native
+    dockerContext: .
+    dockerfilePath: Dockerfile
+    envVars:
+      - key: PORT
+        value: 10000
