@@ -19,47 +19,47 @@ public class ZeptoService {
             BrowserContext context = browser.newContext();
             Page page = context.newPage();
 
-            System.out.println("Navigating to Zepto...");
-            page.navigate("https://www.zepto.com/");
-
-            // TODO: Handle Login logic here?
-            // Zepto usually requires phone number + OTP.
-            // If the user is not logged in, we can't really proceed to address/checkout.
-            // For now, implementing the search and add flow assuming we can get past this
-            // or just to demonstrate.
+            System.out.println("Navigating to Zepto Search...");
+            // Navigate directly to search to avoid homepage trigger issues
+            page.navigate("https://www.zepto.com/search");
 
             // Handle multiple products
             for (String productName : request.getProducts()) {
                 System.out.println("Searching for: " + productName);
-                page.getByPlaceholder("Search for...").fill(productName);
-                page.getByPlaceholder("Search for...").press("Enter");
-                page.waitForTimeout(2000); // Wait for results
+
+                // Use robust selector matching the placeholder "Search for over 5000 products"
+                // Using a partial match locator for safety against number changes
+                Locator searchInput = page.locator("input[placeholder*='Search for']");
+
+                // Ensure it's visible
+                searchInput.waitFor();
+                searchInput.fill(productName);
+                searchInput.press("Enter");
+
+                page.waitForTimeout(3000); // Wait for results
 
                 // Add first item if available
                 System.out.println("Adding " + productName + " to cart...");
-                // Placeholder selector - needs verification
-                // page.locator("button:has-text('Add')").first().click();
 
-                // Clear search or navigate home to search next?
-                // For safety, might be better to just clear search input
-                page.getByPlaceholder("Search for...").fill("");
+                // Robust selector for ADD button
+                // Use "ADD" text which is standard on their buttons
+                Locator addButton = page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("ADD")).first();
+
+                if (addButton.isVisible()) {
+                    addButton.click();
+                    System.out.println("Added " + productName);
+                } else {
+                    System.out.println("Could not find ADD button for " + productName);
+                }
+
+                // Re-navigating to search page for next item
+                if (request.getProducts().indexOf(productName) < request.getProducts().size() - 1) {
+                    page.navigate("https://www.zepto.com/search");
+                }
             }
 
-            // Go to Cart
-            // page.locator("[aria-label='Cart']").click();
-
-            // Proceed to Pay
-
-            // Select UPI
-            // page.locator("text=UPI").click();
-            // page.getByPlaceholder("Enter UPI ID").fill(request.getUpiId());
-            // page.locator("button:has-text('Verify')").click();
-
-            // Final Pay
-            // page.locator("button:has-text('Pay')").click();
-
             return "Order process initiated for products: " + request.getProducts()
-                    + ". (Note: Actual selectors need verification)";
+                    + ". (Note: Checkout flow pending login)";
         }
     }
 }
