@@ -3,6 +3,7 @@ package com.automation.zepto.service;
 import com.automation.zepto.dto.OrderRequest;
 import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.AriaRole;
+import com.microsoft.playwright.options.LoadState;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -13,39 +14,56 @@ public class ZeptoService {
     public String executeOrder(OrderRequest request) {
         try (Playwright playwright = Playwright.create()) {
             Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
-                    .setHeadless(true)); // Headless for Render
+                    .setHeadless(true)); // Headless is true for Render
 
-            BrowserContext context = browser.newContext();
+            // Create context with geolocation permissions if possible, though strict
+            // address selection is better
+            BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+                    .setUserAgent(
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")); // Use
+                                                                                                                                                 // standard
+                                                                                                                                                 // User
+                                                                                                                                                 // Agent
+
             Page page = context.newPage();
+            // increase default timeout to 60s for Render network/cpu lag
+            page.setDefaultTimeout(60000);
 
             System.out.println("Navigating to Zepto Home...");
-            page.navigate("https://www.zepto.com/");
+            page.navigate("https://www.zepto.com/", new Page.NavigateOptions().setTimeout(60000));
+            page.waitForLoadState(LoadState.DOMCONTENTLOADED);
 
-            // Handle Location Setting First
+            // 1. Handle Location Explicitly
             handleLocation(page);
 
             System.out.println("Navigating to Zepto Search...");
-            page.navigate("https://www.zepto.com/search");
+            page.navigate("https://www.zepto.com/search", new Page.NavigateOptions().setTimeout(60000));
+            page.waitForLoadState(LoadState.DOMCONTENTLOADED);
 
-            // Handle multiple products
+            // 2. Search for Products
             for (String productName : request.getProducts()) {
                 System.out.println("Searching for: " + productName);
 
-                Locator searchInput = page.locator("input[placeholder*='Search for']");
-
-                // Allow some time for redirection/load after location set
-                try {
-                    searchInput.waitFor(new Locator.WaitForOptions().setTimeout(10000));
-                } catch (TimeoutError e) {
-                    System.out.println("Search input not found immediately. Retrying navigation...");
-                    page.navigate("https://www.zepto.com/search");
-                    searchInput.waitFor();
+                // Try multiple selectors for the search bar
+                Locator searchInput = page.locator("input[placeholder*='Search for']").first();
+                if (!searchInput.isVisible()) {
+                    System.out.println("Standard search input not visible. Checking for fallback...");
+                    // Sometimes it's a 'combobox' without exact placeholder
+                    searchInput = page.getByRole(AriaRole.COMBOBOX).first();
                 }
 
+                // Explicit wait
+                searchInput.waitFor();
                 searchInput.fill(productName);
                 searchInput.press("Enter");
 
-                page.waitForTimeout(3000); // Wait for results
+                // Wait for results grid
+                try {
+                    page.locator("button:has-text('ADD')").first()
+                            .waitFor(new Locator.WaitForOptions().setTimeout(10000));
+                } catch (TimeoutError e) {
+                    System.out.println("Warning: No 'ADD' buttons found immediately. Results might be empty.");
+                }
 
                 System.out.println("Adding " + productName + " to cart...");
 
@@ -54,81 +72,81 @@ public class ZeptoService {
 
                 if (addButton.isVisible()) {
                     addButton.click();
-                    System.out.println("Added " + productName);
+                    System.out.println("Clicked ADD for " + productName);
                 } else {
                     System.out.println("Could not find ADD button for " + productName);
                 }
 
-                // Prepare for next item
+                // Return to search for next item
                 if (request.getProducts().indexOf(productName) < request.getProducts().size() - 1) {
                     page.navigate("https://www.zepto.com/search");
                 }
             }
 
-            return "Order process initiated for products: " + request.getProducts() + ". (Location set to: "
-                    + DEFAULT_ADDRESS + ")";
+            return "Order process completed for products: " + request.getProducts();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "Error during automation: " + e.getMessage();
         }
     }
 
     private void handleLocation(Page page) {
         System.out.println("Checking Location settings...");
         try {
-            // Check if we need to select location (Look for 'Select Location' button or
-            // check if modal is open)
-            // In a fresh session, it usually prompts or shows 'Select Location' in header
-            Locator locationButton = page.locator("button[aria-label*='Select Location']");
+            // Check if location input is already there (Modal Open)
+            Locator locationInput = page.locator("input[placeholder*='Search a new address']").first();
 
-            if (locationButton.isVisible()) {
-                System.out.println("Clicking 'Select Location'...");
-                locationButton.click();
-            } else {
-                System.out.println("Location button not found or location already set.");
-                // Check if 'Type your location' input is already visible (Modal open)
-            }
-
-            Locator locationInput = page.locator("input[placeholder='Search a new address']");
-
-            // If input is not visible, maybe we need to wait or it's a different flow
             if (!locationInput.isVisible()) {
-                // Try generic placeholder if specific one fails
-                locationInput = page.locator("input[placeholder*='Search']").first();
-            }
-
-            if (locationInput.isVisible()) {
-                System.out.println("Setting location to: " + DEFAULT_ADDRESS);
-                locationInput.fill(DEFAULT_ADDRESS);
-
-                // Wait for suggestions
-                page.waitForTimeout(2000);
-
-                // Click first suggestion
-                Locator firstSuggestion = page.locator("div[data-testid='address-search-suggestion']").first();
-                if (!firstSuggestion.isVisible()) {
-                    // Fallback to text match if testid missing
-                    firstSuggestion = page.locator("span")
-                            .filter(new Locator.FilterOptions().setHasText("Vijaya Nagar")).first();
+                System.out.println("Location modal not open. Attempting to open...");
+                // Click header location button.
+                // Selector strategy: Button in header that is likely the location picker.
+                // Usually has 'Select Location' or current location text.
+                Locator locationBtn = page.locator("button[data-testid='user-address-container']").first(); // Try
+                                                                                                            // testid
+                                                                                                            // first if
+                                                                                                            // exists
+                                                                                                            // (guess)
+                if (!locationBtn.isVisible()) {
+                    locationBtn = page.locator("button")
+                            .filter(new Locator.FilterOptions().setHasText("Select Location")).first();
+                }
+                if (!locationBtn.isVisible()) {
+                    // Fallback: any button in header area?
+                    // Let's try the subagent's finding: aria-label
+                    locationBtn = page.locator("button[aria-label*='Select Location']").first();
                 }
 
-                if (firstSuggestion.isVisible()) {
-                    firstSuggestion.click();
-                    System.out.println("Location selected.");
-                    page.waitForTimeout(2000); // Wait for location to apply
-                } else {
-                    System.out.println("No address suggestions found.");
+                if (locationBtn.isVisible()) {
+                    locationBtn.click();
+                    System.out.println("Clicked Location Header Button.");
                 }
             }
 
-            // Check for Blocking Login Drawer (Enter Phone Number)
-            Locator phoneInput = page.locator("input[placeholder='Enter Phone Number']");
-            if (phoneInput.isVisible()) {
-                System.out.println("Login drawer detected. Attempting to dismiss or ignore...");
-                // Try clicking outside or verifying if we can navigate away
-                // Usually direct navigation to /search works if location cookie is set
-            }
+            // Now wait for input
+            locationInput.waitFor(new Locator.WaitForOptions().setTimeout(10000));
+
+            System.out.println("Setting address: " + DEFAULT_ADDRESS);
+            locationInput.fill(DEFAULT_ADDRESS);
+
+            // Wait for suggestions
+            System.out.println("Waiting for suggestions...");
+            Locator suggestion = page.locator("div[data-testid='address-search-suggestion']").first();
+            suggestion.waitFor(new Locator.WaitForOptions().setTimeout(10000));
+
+            System.out.println("Clicking suggestion: " + suggestion.innerText());
+            suggestion.click();
+
+            // Wait for modal to close or Page to update
+            // We can wait for the location input to disappear
+            locationInput.waitFor(new Locator.WaitForOptions()
+                    .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN).setTimeout(10000));
+            System.out.println("Location set successfully.");
+
+            page.waitForTimeout(2000); // Breathe
 
         } catch (Exception e) {
-            System.out.println("Error handling location: " + e.getMessage());
-            // Continue assuming it might work or we can search anyway
+            System.out.println("Location Setup Warning: " + e.getMessage());
+            // Don't throw, try to proceed in case it was already set
         }
     }
 }
