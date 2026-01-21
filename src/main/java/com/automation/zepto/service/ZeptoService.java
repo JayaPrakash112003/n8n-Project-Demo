@@ -4,6 +4,7 @@ import com.automation.zepto.dto.OrderRequest;
 import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.AriaRole;
 import com.microsoft.playwright.options.LoadState;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -11,7 +12,8 @@ public class ZeptoService {
 
     private static final String DEFAULT_ADDRESS = "Vijaya Nagar - 1st Main Road, Vijaya Nagar, Chennai, Tamil Nadu";
 
-    public String executeOrder(OrderRequest request) {
+    @Async
+    public void executeOrder(OrderRequest request) {
         try (Playwright playwright = Playwright.create()) {
             Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
                     .setHeadless(true)); // Headless is true for Render
@@ -83,10 +85,10 @@ public class ZeptoService {
                 }
             }
 
-            return "Order process completed for products: " + request.getProducts();
+            System.out.println("Order process completed for products: " + request.getProducts());
         } catch (Exception e) {
             e.printStackTrace();
-            return "Error during automation: " + e.getMessage();
+            System.err.println("Error during automation: " + e.getMessage());
         }
     }
 

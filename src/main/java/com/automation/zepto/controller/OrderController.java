@@ -20,14 +20,16 @@ public class OrderController {
     public ResponseEntity<java.util.Map<String, Object>> placeOrder(@RequestBody OrderRequest request) {
         java.util.Map<String, Object> response = new java.util.HashMap<>();
         try {
-            String result = zeptoService.executeOrder(request);
+            // This now runs in background
+            zeptoService.executeOrder(request);
+
             response.put("status", "success");
-            response.put("message", result);
+            response.put("message", "Automation started in background. Check Render logs for progress.");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             e.printStackTrace();
             response.put("status", "error");
-            response.put("message", "Order failed: " + e.getMessage());
+            response.put("message", "Failed to start automation: " + e.getMessage());
             return ResponseEntity.internalServerError().body(response);
         }
     }
